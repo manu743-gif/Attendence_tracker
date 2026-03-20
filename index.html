@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="GATE 2027 Daily Study Attendance Tracker — track your streak, study days, and countdown to exam day." />
+  <title>GATE 2027 Study Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- ── Firebase Compat SDK (v9.23.0) ── -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+  <!-- ─────────────────────────────────────────
+       SETUP MODAL (first-time onboarding)
+  ───────────────────────────────────────── -->
+  <div id="setupOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="setupTitle" hidden>
+    <div class="overlay-card setup-card">
+      <div class="overlay-brand">
+        <span class="brand-icon">📚</span>
+        <h1 id="setupTitle" class="overlay-heading">Welcome! Let's set you up</h1>
+        <p class="overlay-sub">This takes 30 seconds. Your data is synced to the cloud.</p>
+      </div>
+
+      <!-- Step indicator -->
+      <div class="step-dots" aria-hidden="true">
+        <span class="step-dot step-dot--active" data-step="1"></span>
+        <span class="step-dot" data-step="2"></span>
+        <span class="step-dot" data-step="3"></span>
+      </div>
+
+      <!-- STEP 1: Identity -->
+      <div class="setup-step" id="step1">
+        <label class="field-label" for="setupName">Your Display Name</label>
+        <input class="field-input" id="setupName" type="text" placeholder="e.g. Arjun" maxlength="30" autocomplete="name" />
+
+        <label class="field-label" for="setupEmail">Email (used as username)</label>
+        <input class="field-input" id="setupEmail" type="email" placeholder="you@example.com" autocomplete="email" />
+
+        <p id="setupError1" class="field-error" role="alert" hidden></p>
+        <button type="button" class="btn btn--primary btn--full" id="step1Next">Continue →</button>
+      </div>
+
+      <!-- STEP 2: Security -->
+      <div class="setup-step" id="step2" hidden>
+        <label class="field-label" for="setupPassword">Set a Password (local lock)</label>
+        <input class="field-input" id="setupPassword" type="password" placeholder="Min 4 characters" autocomplete="new-password" />
+
+        <label class="field-label" for="setupPasswordConfirm">Confirm Password</label>
+        <input class="field-input" id="setupPasswordConfirm" type="password" placeholder="Repeat password" autocomplete="new-password" />
+
+        <p class="field-hint">🔒 Password is stored as a hash on this device for privacy.</p>
+        <p id="setupError2" class="field-error" role="alert" hidden></p>
+
+        <div class="btn-row">
+          <button type="button" class="btn btn--ghost" id="step2Back">← Back</button>
+          <button type="button" class="btn btn--primary" id="step2Next">Continue →</button>
+        </div>
+      </div>
+
+      <!-- STEP 3: Study config -->
+      <div class="setup-step" id="step3" hidden>
+        <label class="field-label" for="setupAppTitle">App Title</label>
+        <input class="field-input" id="setupAppTitle" type="text" placeholder="e.g. GATE 2027" maxlength="20" value="GATE 2027" />
+
+        <label class="field-label" for="setupTargetDate">Target Exam Date</label>
+        <input class="field-input" id="setupTargetDate" type="date" required />
+
+        <p id="setupError3" class="field-error" role="alert" hidden></p>
+
+        <div class="btn-row">
+          <button type="button" class="btn btn--ghost" id="step3Back">← Back</button>
+          <button type="button" class="btn btn--primary" id="setupSubmit">🚀 Start Tracking</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────
+       LOCK SCREEN
+  ───────────────────────────────────────── -->
+  <div id="lockOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="lockHeading" hidden>
+    <div class="overlay-card lock-card">
+      <div class="lock-brand">
+        <div class="lock-icon">🔐</div>
+        <h1 id="lockHeading" class="lock-app-name" id="lockAppTitle">GATE 2027</h1>
+        <p class="lock-subtitle">Study Tracker</p>
+      </div>
+
+      <div class="lock-user">
+        <div class="lock-avatar" id="lockAvatar">A</div>
+        <div>
+          <p class="lock-name" id="lockName">Loading…</p>
+          <p class="lock-email" id="lockEmail">loading@example.com</p>
+        </div>
+      </div>
+
+      <label class="field-label" for="lockPassword">Password</label>
+      <input class="field-input" id="lockPassword" type="password" placeholder="Enter your password" autocomplete="current-password" />
+      <p id="lockError" class="field-error" role="alert" hidden>Incorrect password. Try again.</p>
+      <button type="button" class="btn btn--primary btn--full" id="unlockBtn">🔓 Unlock</button>
+
+      <button type="button" id="forgotBtn" class="danger-link">Forgot password? Reset App ⚠️</button>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────
+       MAIN APP
+  ───────────────────────────────────────── -->
+  <div id="mainApp" hidden>
+
+    <!-- HEADER -->
+    <header class="app-header" role="banner">
+      <div class="header-brand">
+        <span class="brand-tag" id="brandTag" title="Click to edit">
+          <span id="brandTagText" class="brand-tag-text">GATE 2027</span>
+          <input id="brandTagInput" class="brand-tag-input" type="text" maxlength="20" aria-label="Edit app title" />
+          <span class="brand-tag-pencil" id="brandTagPencil" aria-hidden="true">✏️</span>
+        </span>
+        <span class="header-divider" aria-hidden="true">|</span>
+        <span class="header-app-label">Study Tracker</span>
+      </div>
+
+      <div class="header-user">
+        <span class="header-greeting" id="headerGreeting">Hello, User 👋</span>
+        <button class="profile-btn" id="profileBtn" aria-label="Edit profile" title="Edit profile">
+          <span class="profile-avatar" id="profileAvatar">U</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- DATE BAR -->
+    <div class="date-bar" aria-live="polite">
+      <span id="currentDateDisplay" class="date-display"></span>
+      <span class="firebase-status" id="firebaseStatus" title="Firebase sync status"></span>
+    </div>
+
+    <!-- 3-COLUMN GRID -->
+    <main class="three-col-grid" role="main">
+
+      <!-- ── LEFT: DAYS LEFT ── -->
+      <aside class="col col--left" aria-label="Days left to exam">
+        <div class="glass-card countdown-card">
+          <p class="card-eyebrow">⏳ EXAM COUNTDOWN</p>
+          <div class="countdown-number" id="daysLeft">—</div>
+          <p class="countdown-label" id="daysLeftLabel">days left</p>
+          <p class="countdown-exam" id="countdownExamName">Set your target date →</p>
+          <div class="countdown-bar-wrap">
+            <div class="countdown-bar" id="countdownBar"></div>
+          </div>
+          <p class="countdown-progress-label" id="countdownProgressLabel"></p>
+        </div>
+      </aside>
+
+      <!-- ── CENTER: MAIN CONTENT ── -->
+      <section class="col col--center" aria-label="Attendance tracker">
+
+        <!-- Today's Status -->
+        <div class="glass-card today-card">
+          <div class="today-status-row">
+            <span class="status-dot" id="statusDot" aria-hidden="true"></span>
+            <span class="status-text" id="statusText">Loading…</span>
+          </div>
+          <button class="btn btn--mark" id="markBtn" aria-live="polite">
+            <span id="markBtnIcon" aria-hidden="true">✅</span>
+            <span id="markBtnText">Mark Today's Study</span>
+            <span class="btn-ripple" id="btnRipple" aria-hidden="true"></span>
+          </button>
+
+          <div class="goal-row">
+            <label class="goal-label" for="goalCheck">
+              <input type="checkbox" id="goalCheck" class="goal-checkbox" />
+              <span class="goal-toggle-ui" aria-hidden="true"></span>
+              Completed 2-hour study goal today?
+            </label>
+            <span class="goal-badge" id="goalBadge">—</span>
+          </div>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="stats-row">
+          <div class="glass-card stat-card">
+            <p class="stat-value" id="streakCount">0</p>
+            <p class="stat-label">🔥 Day Streak</p>
+          </div>
+          <div class="glass-card stat-card">
+            <p class="stat-value" id="totalCount">0</p>
+            <p class="stat-label">📅 Total Days</p>
+          </div>
+          <div class="glass-card stat-card">
+            <p class="stat-value" id="consistencyPercent">0%</p>
+            <p class="stat-label">🎯 Consistency</p>
+          </div>
+        </div>
+
+        <!-- Calendar -->
+        <div class="glass-card calendar-card">
+          <div class="cal-header">
+            <button class="cal-nav-btn" id="prevMonth" aria-label="Previous month">‹</button>
+            <span class="cal-month-label" id="calMonthLabel">March 2026</span>
+            <button class="cal-nav-btn" id="nextMonth" aria-label="Next month">›</button>
+          </div>
+          <div class="cal-weekdays" role="row">
+            <span>Su</span><span>Mo</span><span>Tu</span><span>We</span>
+            <span>Th</span><span>Fr</span><span>Sa</span>
+          </div>
+          <div class="cal-grid" id="calGrid" role="grid" aria-label="Attendance calendar"></div>
+          <div class="progress-section">
+            <div class="progress-track" role="progressbar" id="progressBar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p class="progress-label" id="progressLabel">0 / 0 days</p>
+          </div>
+        </div>
+
+        <!-- Quote Card -->
+        <div class="glass-card quote-card">
+          <p class="quote-text" id="quoteText">"Loading quote…"</p>
+          <button class="quote-refresh-btn" id="quoteRefresh" aria-label="New quote">↻ New quote</button>
+        </div>
+      </section>
+
+      <!-- ── RIGHT: TARGET DATE ── -->
+      <aside class="col col--right" aria-label="Target exam date">
+        <div class="glass-card target-card">
+          <p class="card-eyebrow">🎯 TARGET DATE</p>
+          <p class="target-date-display" id="targetDateDisplay">Not set</p>
+          <p class="target-date-label">Your exam day. Make every day count.</p>
+          <label class="field-label small" for="targetDateInput">Set / Update Date</label>
+          <input class="field-input field-input--sm" id="targetDateInput" type="date" />
+          <button class="btn btn--secondary btn--full" id="saveTargetDateBtn">Save Date 📅</button>
+          <hr class="card-divider" />
+          <div class="study-tip">
+            <p class="tip-label">💡 Daily Tip</p>
+            <p class="tip-text" id="tipText">Set a target date to unlock your personalised countdown.</p>
+          </div>
+        </div>
+
+        <!-- Profile edit mini-card -->
+        <div class="glass-card profile-card" id="profileCard" hidden>
+          <p class="card-eyebrow">👤 YOUR PROFILE</p>
+          <label class="field-label small" for="editName">Display Name</label>
+          <input class="field-input field-input--sm" id="editName" type="text" maxlength="30" />
+          <button class="btn btn--secondary btn--full" id="saveProfileBtn">Save Profile</button>
+          <button class="btn btn--ghost btn--full" id="cancelProfileBtn">Cancel</button>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="app-footer" role="contentinfo">
+      <p>GATE 2027 Tracker · Data synced to Firebase · Built with 💚</p>
+    </footer>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="script.js?v=4"></script>
+</body>
+</html>
